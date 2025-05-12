@@ -1,436 +1,829 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ESP32 Sensor Web BLE - Enhanced</title>
+    <title>ESP32 SCD30 Web BLE</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Include Chart.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script> <!-- For time scale -->
+
     <style>
-        /* Basic Styling - Adjust as needed */
-        body { font-family: sans-serif; padding: 15px; max-width: 700px; margin: auto; }
-        button { padding: 8px 12px; font-size: 0.9em; cursor: pointer; margin: 5px 5px 5px 0; border-radius: 4px; border: 1px solid #ccc; background-color: #f0f0f0; }
-        button:hover { background-color: #e0e0e0; }
-        button:disabled { background-color: #ddd; cursor: not-allowed; }
-        input[type="number"] { padding: 6px; margin-right: 5px; max-width: 80px; }
-        .section { border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 5px; background-color: #fff; }
-        .section h2 { margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-        #status, #commandStatus { margin-bottom: 15px; font-weight: bold; padding: 8px; border-radius: 4px; background-color: #eee; text-align: center;}
-        .status-error { background-color: #f8d7da; color: #721c24; }
-        .status-success { background-color: #d4edda; color: #155724; }
-        .data-item { margin-bottom: 8px; display: flex; justify-content: space-between; }
-        .label { font-weight: bold; color: #555; min-width: 100px; }
-        .value { color: #007bff; font-weight: bold; }
-        .unit { color: #777; margin-left: 3px; }
-        .stats-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        .stats-table th, .stats-table td { border: 1px solid #eee; padding: 6px; text-align: right; }
-        .stats-table th { background-color: #f8f8f8; text-align: center; }
-        .control-group { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed #eee; }
-         .control-group:last-child { border-bottom: none; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            padding: 15px;
+            background-color: #f8f9fa;
+            color: #343a40;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px; /* Wider for graphs */
+            margin: auto;
+            background: #ffffff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+            border: 1px solid #dee2e6;
+        }
+        h1, h2 {
+            text-align: center;
+            color: #007bff; /* Primary color */
+            margin-bottom: 1.2em;
+        }
+        h2 {
+            color: #495057;
+             margin-top: 1.5em;
+             border-bottom: 1px solid #e9ecef;
+             padding-bottom: 0.3em;
+        }
+        button {
+            padding: 12px 18px;
+            background-color: #28a745; /* Green */
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            margin: 8px 0;
+            display: block;
+            width: 100%;
+            transition: background-color 0.2s ease;
+        }
+        button:hover:not(:disabled) {
+            background-color: #218838;
+        }
+        button:disabled {
+            background-color: #ced4da;
+            cursor: not-allowed;
+        }
+        #disconnectButton {
+             background-color: #dc3545; /* Red */
+        }
+         #disconnectButton:hover:not(:disabled) {
+             background-color: #c82333;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 12px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: 500;
+            border: 1px solid #dee2e6;
+        }
+        .section {
+            margin-top: 25px;
+            padding: 20px;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            background-color: #fdfdfd;
+        }
+
+        /* Grid layout for data/stats */
+        .data-item, .stat-item {
+            display: grid;
+            grid-template-columns: 160px 1fr; /* Fixed label width, flexible value */
+            gap: 10px; /* Gap between label and value */
+            align-items: center;
+            margin-bottom: 12px;
+            padding: 5px 0;
+            border-bottom: 1px dashed #eee; /* Subtle separator */
+        }
+         .data-item:last-child, .stat-item:last-child {
+             border-bottom: none;
+         }
+
+         .data-item span:first-child, .stat-item span:first-child, .control-item > label {
+            font-weight: 500; /* Slightly bolder */
+            color: #495057;
+         }
+        .value-unit { /* Container for value + unit */
+             text-align: right;
+             font-weight: 500;
+             color: #212529;
+        }
+        .value-unit .unit {
+            font-size: 0.9em;
+            color: #6c757d;
+            margin-left: 5px;
+        }
+
+        .control-item {
+            display: grid; /* Use grid for controls too */
+            grid-template-columns: 1fr auto; /* Label takes space, control aligns right */
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .control-item > div { /* Container for input/button/switch */
+             display: flex;
+             align-items: center;
+             justify-content: flex-end; /* Align controls to the right */
+        }
+
+        .control-item input[type="number"] {
+            padding: 8px 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            width: 80px;
+            margin-right: 10px; /* Space before button */
+            text-align: right;
+        }
+         .control-item button {
+            width: auto; /* Override block width */
+            display: inline-block;
+            margin-left: 0; /* Remove default margin */
+            padding: 8px 15px; /* Smaller button */
+            background-color: #007bff; /* Blue for calibrate */
+         }
+          .control-item button:hover:not(:disabled) {
+            background-color: #0056b3;
+          }
+
+         /* Switch styling */
+         .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+            margin-left: 10px;
+        }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #ccc; transition: .4s; border-radius: 24px;
+        }
+        .slider:before {
+            position: absolute; content: ""; height: 18px; width: 18px;
+            left: 3px; bottom: 3px; background-color: white;
+            transition: .4s; border-radius: 50%;
+        }
+        input:checked + .slider { background-color: #28a745; } /* Green when ON */
+        input:focus + .slider { box-shadow: 0 0 1px #2196F3; }
+        input:disabled + .slider { background-color: #e9ecef; cursor: not-allowed; }
+        input:disabled + .slider:before { background-color: #ced4da; }
+        input:checked + .slider:before { transform: translateX(26px); }
+
+        .error {
+            color: #dc3545; /* Red */
+            font-weight: bold;
+            margin-top: 15px;
+            text-align: center;
+            padding: 10px;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 5px;
+        }
+
+        /* Chart styling */
+        .chart-container {
+            margin-top: 20px;
+            position: relative;
+            height: 250px; /* Adjust height as needed */
+            width: 100%;
+        }
+
+        /* Danger button styles */
+        .danger-button {
+             background-color: #ffc107; /* Warning yellow */
+             color: #212529;
+        }
+        .danger-button:hover:not(:disabled) {
+             background-color: #e0a800;
+        }
+        .danger-button.critical {
+             background-color: #dc3545; /* Critical Red */
+             color: white;
+        }
+        .danger-button.critical:hover:not(:disabled) {
+             background-color: #c82333;
+        }
+        .controls-section { /* Add space below controls */
+            margin-bottom: 25px;
+        }
 
     </style>
 </head>
 <body>
+    <div class="container">
+        <h1>ESP32 SCD30 Sensor</h1>
 
-    <h1>ESP32 SCD30 Sensor Interface</h1>
+        <button id="connectButton">Connect to ESP32 Sensor</button>
+        <button id="disconnectButton" disabled>Disconnect</button>
 
-    <button id="connectButton">Connect Bluetooth</button>
-    <div id="status">Status: Disconnected</div>
-    <div id="commandStatus">Command Status: ---</div>
+        <div id="status" class="status">Disconnected</div>
+        <div id="error" class="error" style="display: none;"></div> <!-- Hide error initially -->
 
-    <!-- Sensor Readings Section -->
-    <div class="section">
-        <h2>Live Readings</h2>
-        <div class="data-item">
-            <span class="label">CO2:</span>
-            <span><span id="co2Value" class="value">---</span><span class="unit">ppm</span></span>
+        <div class="section"> <!-- Live Data -->
+            <h2>Live Data</h2>
+            <div class="data-item">
+                <span>CO₂:</span>
+                <span class="value-unit"><span id="co2">---</span><span class="unit">ppm</span></span>
+            </div>
+            <div class="data-item">
+                <span>Temperature:</span>
+                <span class="value-unit"><span id="temp">---</span><span class="unit">°C</span></span>
+            </div>
+            <div class="data-item">
+                <span>Humidity:</span>
+                <span class="value-unit"><span id="humidity">---</span><span class="unit">%</span></span>
+            </div>
+            <div class="data-item">
+                <span>Uptime:</span>
+                <span class="value-unit"><span id="uptime">---</span></span>
+            </div>
         </div>
-        <div class="data-item">
-            <span class="label">Temperature:</span>
-             <span><span id="tempValue" class="value">---</span><span class="unit">°C</span></span>
+
+         <div class="section controls-section"> <!-- Controls -->
+            <h2>Controls</h2>
+             <div class="control-item">
+                 <label for="ascSwitch">Auto Self-Calibration (ASC):</label>
+                 <div>
+                    <span id="ascStatus" style="margin-right: 10px; color: #6c757d;">Unknown</span>
+                    <label class="switch">
+                        <input type="checkbox" id="ascSwitch" disabled>
+                        <span class="slider"></span>
+                    </label>
+                 </div>
+             </div>
+            <div class="control-item">
+                <label for="frcValue">Forced Recalibration (400-2000 ppm):</label>
+                <div>
+                    <input type="number" id="frcValue" min="400" max="2000" value="415" disabled>
+                    <button id="frcButton" disabled>Calibrate</button>
+                </div>
+            </div>
+            <!-- Reset/Restart Buttons -->
+            <div class="control-item">
+                 <label for="resetStatsButton">Reset Statistics:</label>
+                 <div>
+                    <button id="resetStatsButton" class="danger-button" disabled>Reset Stats</button>
+                 </div>
+            </div>
+             <div class="control-item">
+                 <label for="restartDeviceButton">Restart Device:</label>
+                 <div>
+                    <button id="restartDeviceButton" class="danger-button critical" disabled>Restart ESP32</button>
+                 </div>
+            </div>
         </div>
-        <div class="data-item">
-            <span class="label">Humidity:</span>
-            <span><span id="humidityValue" class="value">---</span><span class="unit">%</span></span>
+
+         <div class="section"> <!-- Graphs -->
+             <h2>Graphs</h2>
+             <div class="chart-container">
+                 <canvas id="co2Chart"></canvas>
+             </div>
+             <div class="chart-container">
+                 <canvas id="tempChart"></canvas>
+             </div>
+             <div class="chart-container">
+                 <canvas id="humidityChart"></canvas>
+             </div>
+         </div>
+
+
+        <div class="section"> <!-- Statistics -->
+            <h2>Statistics (Since Connect/Reset)</h2>
+            <div class="stat-item">
+                <span>CO₂ (Min/Max/Avg):</span>
+                <span class="value-unit"><span id="statsCO2">--- / --- / ---</span><span class="unit">ppm</span></span>
+            </div>
+            <div class="stat-item">
+                <span>Temp (Min/Max/Avg):</span>
+                <span class="value-unit"><span id="statsTemp">--- / --- / ---</span><span class="unit">°C</span></span>
+            </div>
+            <div class="stat-item">
+                <span>Hum (Min/Max/Avg):</span>
+                 <span class="value-unit"><span id="statsHum">--- / --- / ---</span><span class="unit">%</span></span>
+            </div>
         </div>
-        <div class="data-item">
-            <span class="label">ESP32 Uptime:</span>
-            <span id="uptimeValue" class="value">---</span>
-        </div>
+
     </div>
-
-    <!-- Statistics Section -->
-    <div class="section">
-         <h2>Statistics (Since Startup/Reset)</h2>
-         <div class="data-item">
-            <span class="label">Reading Count:</span>
-            <span id="readingCountValue" class="value">---</span>
-        </div>
-         <table class="stats-table">
-             <thead>
-                 <tr><th>Sensor</th><th>Min</th><th>Max</th><th>Average</th></tr>
-             </thead>
-             <tbody>
-                 <tr>
-                     <th>CO2 (ppm)</th>
-                     <td id="co2MinValue">---</td>
-                     <td id="co2MaxValue">---</td>
-                     <td id="co2AvgValue">---</td>
-                 </tr>
-                 <tr>
-                     <th>Temp (°C)</th>
-                     <td id="tempMinValue">---</td>
-                     <td id="tempMaxValue">---</td>
-                     <td id="tempAvgValue">---</td>
-                 </tr>
-                  <tr>
-                     <th>Hum (%)</th>
-                     <td id="humMinValue">---</td>
-                     <td id="humMaxValue">---</td>
-                     <td id="humAvgValue">---</td>
-                 </tr>
-             </tbody>
-         </table>
-    </div>
-
-    <!-- Controls Section -->
-    <div class="section">
-        <h2>Device Controls</h2>
-        <div class="control-group">
-            <label for="frcValue">Force Recalibration (FRC) Target:</label>
-            <input type="number" id="frcValue" value="420" min="400" max="2000"> ppm
-            <button id="frcButton" disabled>Send FRC</button>
-        </div>
-        <div class="control-group">
-            <label>Reset ESP32:</label>
-            <button id="resetButton" disabled>Reset Device</button>
-        </div>
-    </div>
-
 
     <script>
-        // --- DOM Elements ---
+        // Get UI elements
         const connectButton = document.getElementById('connectButton');
+        const disconnectButton = document.getElementById('disconnectButton');
         const statusDisplay = document.getElementById('status');
-        const commandStatusDisplay = document.getElementById('commandStatus');
-        // Live Readings
-        const co2ValueDisplay = document.getElementById('co2Value');
-        const tempValueDisplay = document.getElementById('tempValue');
-        const humidityValueDisplay = document.getElementById('humidityValue');
-        const uptimeValueDisplay = document.getElementById('uptimeValue');
-        // Stats
-        const readingCountValueDisplay = document.getElementById('readingCountValue');
-        const co2MinValueDisplay = document.getElementById('co2MinValue');
-        const co2MaxValueDisplay = document.getElementById('co2MaxValue');
-        const co2AvgValueDisplay = document.getElementById('co2AvgValue');
-        const tempMinValueDisplay = document.getElementById('tempMinValue');
-        const tempMaxValueDisplay = document.getElementById('tempMaxValue');
-        const tempAvgValueDisplay = document.getElementById('tempAvgValue');
-        const humMinValueDisplay = document.getElementById('humMinValue');
-        const humMaxValueDisplay = document.getElementById('humMaxValue');
-        const humAvgValueDisplay = document.getElementById('humAvgValue');
-        // Controls
+        const errorDisplay = document.getElementById('error');
+        const co2Display = document.getElementById('co2');
+        const tempDisplay = document.getElementById('temp');
+        const humidityDisplay = document.getElementById('humidity');
+        const uptimeDisplay = document.getElementById('uptime');
+        const ascSwitch = document.getElementById('ascSwitch');
+        const ascStatusDisplay = document.getElementById('ascStatus');
         const frcValueInput = document.getElementById('frcValue');
         const frcButton = document.getElementById('frcButton');
-        const resetButton = document.getElementById('resetButton');
+        const resetStatsButton = document.getElementById('resetStatsButton'); // New
+        const restartDeviceButton = document.getElementById('restartDeviceButton'); // New
+        const statsCO2Display = document.getElementById('statsCO2');
+        const statsTempDisplay = document.getElementById('statsTemp');
+        const statsHumDisplay = document.getElementById('statsHum');
+        const co2ChartCtx = document.getElementById('co2Chart')?.getContext('2d');
+        const tempChartCtx = document.getElementById('tempChart')?.getContext('2d');
+        const humidityChartCtx = document.getElementById('humidityChart')?.getContext('2d');
+        let co2Chart, tempChart, humidityChart;
 
-        // --- BLE Settings (MATCH ESP32 CODE!) ---
-        const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-        // Data Chars (Notify)
-        const CO2_CHARACTERISTIC_UUID = "a1b5d7c1-0304-4c17-b7f4-3f3d5f5e9f0a";
-        const TEMP_CHARACTERISTIC_UUID = "b2c6e8d2-1415-5d28-c8a5-4a4e6a6f0b1b";
-        const HUMIDITY_CHARACTERISTIC_UUID = "c3d7f9e3-2526-6e39-d9b6-5b5f7b7a1c2c";
-        const UPTIME_CHARACTERISTIC_UUID = "f6a1b2c3-d4e5-8f9a-0b1c-2d3e4f506172"; // Replace with YOUR UUID
-        const STATS_CHARACTERISTIC_UUID = "a1b2c3d4-e5f6-9a0b-1c2d-3e4f50617283"; // Replace with YOUR UUID
-        const COMMAND_STATUS_CHARACTERISTIC_UUID = "b2c3d4e5-f6a1-0b1c-2d3e-4f5061728394"; // Replace with YOUR UUID (Optional)
-        // Command Chars (Write)
-        const FRC_COMMAND_CHARACTERISTIC_UUID = "d4e5f6a1-b2c3-4d5e-8f9a-0b1c2d3e4f50"; // Replace with YOUR UUID
-        const RESET_COMMAND_CHARACTERISTIC_UUID = "e5f6a1b2-c3d4-5e8f-9a0b-1c2d3e4f5061"; // Replace with YOUR UUID
+        // BLE UUIDs
+        const SERVICE_UUID =        "e458cd1c-c71b-4f6b-9765-447dc468182c";
+        const CHAR_UUID_SENSOR_DATA = "8b2f973c-0c9b-4d0a-87ae-5f29b8decbb9";
+        const CHAR_UUID_ASC_STATUS =  "fe921c63-6745-43f5-b070-c9046a30ea10";
+        const CHAR_UUID_FRC_COMMAND = "29caaaab-2588-4bdc-8e41-e364a9dbb202";
+        const CHAR_UUID_STATS =       "b47fc5f5-b357-4883-86b0-fcd107f9a475";
+        const CHAR_UUID_DEVICE_COMMAND = "3194473d-1536-4143-8116-9e805f341420"; // New
 
-
-        // --- BLE State Variables ---
+        // BLE Objects
         let bleDevice;
         let bleServer;
-        let sensorService;
-        let co2Characteristic, tempCharacteristic, humidityCharacteristic;
-        let uptimeCharacteristic, statsCharacteristic, commandStatusCharacteristic;
-        let frcCommandCharacteristic, resetCommandCharacteristic;
-        let isConnecting = false;
-        const decoder = new TextDecoder('utf-8'); // Text decoder
-        const encoder = new TextEncoder();       // Text encoder for sending commands
+        let bleService;
+        let sensorDataCharacteristic;
+        let ascStatusCharacteristic;
+        let frcCommandCharacteristic;
+        let statsCharacteristic;
+        let deviceCommandCharacteristic; // New
 
-        // --- Event Listeners ---
-        connectButton.addEventListener('click', toggleConnection);
-        frcButton.addEventListener('click', sendFRCCommand);
-        resetButton.addEventListener('click', sendResetCommand);
+        let dataReadInterval;
+        const READ_INTERVAL_MS = 5000; // How often to read data (must be >= sensor read interval)
 
-        // --- Core Functions ---
-        function toggleConnection() {
-            if (bleDevice && bleDevice.gatt.connected) {
-                disconnectDevice();
-            } else if (!isConnecting) {
-                connectDevice();
-            }
-        }
+        const textDecoder = new TextDecoder('utf-8');
+        const textEncoder = new TextEncoder();
+
+        // Chart Data Storage
+        const MAX_DATA_POINTS = 60; // Keep last ~5 minutes of data (60 * 5s)
+        let chartLabels = [];
+        let co2Data = [];
+        let tempData = [];
+        let humidityData = [];
+
+        // Event Listeners
+        connectButton.addEventListener('click', connectDevice);
+        disconnectButton.addEventListener('click', disconnectDevice);
+        ascSwitch.addEventListener('change', toggleASC);
+        frcButton.addEventListener('click', sendFRC);
+        resetStatsButton.addEventListener('click', handleResetStats); // New
+        restartDeviceButton.addEventListener('click', handleRestartDevice); // New
+
+        // --- Functions ---
+        function clearError() { errorDisplay.textContent = ''; errorDisplay.style.display = 'none'; }
+        function displayError(message) { console.error(message); errorDisplay.textContent = `Error: ${message}`; errorDisplay.style.display = 'block'; }
 
         async function connectDevice() {
-            if (!navigator.bluetooth) {
-                updateStatus("Web Bluetooth API is not available!", true); return;
-            }
-            if (isConnecting) return;
-
-            isConnecting = true;
-            connectButton.disabled = true;
-            updateStatus('Requesting device...');
-
+            clearError();
             try {
+                statusDisplay.textContent = 'Requesting Bluetooth Device...';
                 bleDevice = await navigator.bluetooth.requestDevice({
-                     filters: [{ services: [SERVICE_UUID] }],
-                     optionalServices: [SERVICE_UUID] // Needed for subsequent service discovery
+                    filters: [{ services: [SERVICE_UUID] }],
+                    // optionalServices: [SERVICE_UUID] // Might be needed on some platforms
                 });
 
-                updateStatus('Connecting...');
+                statusDisplay.textContent = 'Connecting to GATT Server...';
                 bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
                 bleServer = await bleDevice.gatt.connect();
-                updateStatus('Getting service...');
-                sensorService = await bleServer.getPrimaryService(SERVICE_UUID);
-                updateStatus('Getting characteristics...');
 
-                // Get all characteristics
-                [
-                    co2Characteristic, tempCharacteristic, humidityCharacteristic,
-                    uptimeCharacteristic, statsCharacteristic, commandStatusCharacteristic, // Optional
-                    frcCommandCharacteristic, resetCommandCharacteristic
-                ] = await Promise.all([
-                    sensorService.getCharacteristic(CO2_CHARACTERISTIC_UUID).catch(e=>logError("CO2 Char ERR: "+e)),
-                    sensorService.getCharacteristic(TEMP_CHARACTERISTIC_UUID).catch(e=>logError("Temp Char ERR: "+e)),
-                    sensorService.getCharacteristic(HUMIDITY_CHARACTERISTIC_UUID).catch(e=>logError("Hum Char ERR: "+e)),
-                    sensorService.getCharacteristic(UPTIME_CHARACTERISTIC_UUID).catch(e=>logError("Uptime Char ERR: "+e)),
-                    sensorService.getCharacteristic(STATS_CHARACTERISTIC_UUID).catch(e=>logError("Stats Char ERR: "+e)),
-                    sensorService.getCharacteristic(COMMAND_STATUS_CHARACTERISTIC_UUID).catch(e=>logError("Cmd Status Char ERR: "+e)), // Optional
-                    sensorService.getCharacteristic(FRC_COMMAND_CHARACTERISTIC_UUID).catch(e=>logError("FRC Cmd Char ERR: "+e)),
-                    sensorService.getCharacteristic(RESET_COMMAND_CHARACTERISTIC_UUID).catch(e=>logError("Reset Cmd Char ERR: "+e)),
-                ]);
+                statusDisplay.textContent = 'Getting Service...';
+                bleService = await bleServer.getPrimaryService(SERVICE_UUID);
 
-                updateStatus('Setting up notifications...');
+                statusDisplay.textContent = 'Getting Characteristics...';
+                sensorDataCharacteristic = await bleService.getCharacteristic(CHAR_UUID_SENSOR_DATA);
+                ascStatusCharacteristic = await bleService.getCharacteristic(CHAR_UUID_ASC_STATUS);
+                frcCommandCharacteristic = await bleService.getCharacteristic(CHAR_UUID_FRC_COMMAND);
+                statsCharacteristic = await bleService.getCharacteristic(CHAR_UUID_STATS);
+                deviceCommandCharacteristic = await bleService.getCharacteristic(CHAR_UUID_DEVICE_COMMAND); // Get new char
 
-                // Add listeners and start notifications
-                if(co2Characteristic) await startNotifications(co2Characteristic, handleCO2Changed);
-                if(tempCharacteristic) await startNotifications(tempCharacteristic, handleTempChanged);
-                if(humidityCharacteristic) await startNotifications(humidityCharacteristic, handleHumidityChanged);
-                if(uptimeCharacteristic) await startNotifications(uptimeCharacteristic, handleUptimeChanged);
-                if(statsCharacteristic) await startNotifications(statsCharacteristic, handleStatsChanged);
-                if(commandStatusCharacteristic) await startNotifications(commandStatusCharacteristic, handleCommandStatusChanged); // Optional
+                statusDisplay.textContent = 'Connected';
+                connectButton.disabled = true;
+                disconnectButton.disabled = false;
+                ascSwitch.disabled = false;
+                frcValueInput.disabled = false;
+                frcButton.disabled = false;
+                resetStatsButton.disabled = false; // Enable new buttons
+                restartDeviceButton.disabled = false; // Enable new buttons
 
-                updateStatus('Connected', false);
-                connectButton.textContent = 'Disconnect';
-                enableControls(true); // Enable control buttons
+                initializeCharts(); // Initialize or re-initialize charts
+                await readAscStatus();
+                await readSensorData(); // Initial read (also updates chart)
+                await readStatistics(); // Initial read
 
-            } catch (error) {
-                logError(`Connection failed: ${error}`);
-                updateStatus(`Error: ${error.message || error}`, true);
-                if (bleDevice && bleDevice.gatt.connected) {
-                    bleDevice.gatt.disconnect();
+                // Start polling ONLY if interval not already running
+                if (!dataReadInterval) {
+                    dataReadInterval = setInterval(async () => {
+                        if (!bleDevice || !bleDevice.gatt.connected) {
+                             console.log("Device disconnected, stopping interval.");
+                             clearInterval(dataReadInterval);
+                             dataReadInterval = null; // Clear interval ID
+                             onDisconnected(); // Ensure UI is reset if interval detects disconnect
+                             return;
+                        }
+                        await readSensorData(); // Updates charts
+                        await readStatistics();
+                    }, READ_INTERVAL_MS);
                 }
-                 resetUI(); // Ensure UI is reset on failure
-            } finally {
-                isConnecting = false;
-                connectButton.disabled = false;
-            }
-        }
 
-         async function startNotifications(characteristic, handler) {
-            if (!characteristic) return; // Guard against undefined char
-            try {
-                characteristic.addEventListener('characteristicvaluechanged', handler);
-                await characteristic.startNotifications();
-                log(`> Notifications started for ${characteristic.uuid}`);
             } catch (error) {
-                 logError(`Error starting notifications for ${characteristic.uuid}: ${error}`);
-                 // Maybe update UI to show this specific characteristic failed
-            }
-        }
-
-        function disconnectDevice() {
-            if (!bleDevice) return;
-            log('Disconnecting...');
-            if (bleDevice.gatt.connected) {
-                bleDevice.gatt.disconnect(); // Should trigger onDisconnected
-            } else {
-                onDisconnected(); // Manually trigger if already disconnected
+                displayError(error.message || error);
+                statusDisplay.textContent = 'Connection Failed';
+                resetUI();
             }
         }
 
         function onDisconnected() {
-            log('Bluetooth Device disconnected');
-            updateStatus('Disconnected');
+            console.log('GATT Server Disconnected');
+            clearError();
+            statusDisplay.textContent = 'Device Disconnected';
+            if (dataReadInterval) {
+                clearInterval(dataReadInterval);
+                dataReadInterval = null; // Clear interval ID
+            }
             resetUI();
-
-             // Clean up event listeners (add try/catch for robustness)
-            const removeListener = (char, handler) => {
-                if (char) try { char.removeEventListener('characteristicvaluechanged', handler); } catch(e) {logError("Listener remove error: "+e)}
-            };
-            removeListener(co2Characteristic, handleCO2Changed);
-            removeListener(tempCharacteristic, handleTempChanged);
-            removeListener(humidityCharacteristic, handleHumidityChanged);
-            removeListener(uptimeCharacteristic, handleUptimeChanged);
-            removeListener(statsCharacteristic, handleStatsChanged);
-            removeListener(commandStatusCharacteristic, handleCommandStatusChanged); // Optional
-
-            // Nullify objects
-            bleDevice = bleServer = sensorService = null;
-            co2Characteristic = tempCharacteristic = humidityCharacteristic = null;
-            uptimeCharacteristic = statsCharacteristic = commandStatusCharacteristic = null;
-            frcCommandCharacteristic = resetCommandCharacteristic = null;
         }
 
-        // --- Command Sending Functions ---
-        async function sendFRCCommand() {
-            if (!frcCommandCharacteristic || !bleDevice || !bleDevice.gatt.connected) {
-                 updateCommandStatus("Cannot send FRC: Not connected or characteristic unavailable", true); return;
+        function disconnectDevice() {
+            clearError();
+            if (!bleDevice || !bleDevice.gatt.connected) {
+                 statusDisplay.textContent = 'Already Disconnected';
+                 resetUI(); // Ensure UI consistency
+                 return;
             }
-            const ppmValue = frcValueInput.value;
-            const ppmInt = parseInt(ppmValue, 10);
-
-            if (isNaN(ppmInt) || ppmInt < 400 || ppmInt > 2000) { // Basic validation
-                updateCommandStatus("Invalid FRC PPM value (must be 400-2000).", true); return;
+            statusDisplay.textContent = 'Disconnecting...';
+            if (dataReadInterval) { // Clear interval before potential disconnect errors
+                 clearInterval(dataReadInterval);
+                 dataReadInterval = null;
             }
-
-            try {
-                 updateCommandStatus(`Sending FRC command (${ppmValue} ppm)...`, false, true); // Indicate pending
-                 frcButton.disabled = true; // Disable button while sending
-                 await frcCommandCharacteristic.writeValueWithoutResponse(encoder.encode(ppmValue)); // Send as string
-                 log(`Sent FRC value: ${ppmValue}`);
-                 // Don't immediately say OK here, wait for status characteristic if available
-                 // updateCommandStatus(`FRC command (${ppmValue} ppm) sent.`, false);
-            } catch (error) {
-                logError(`Error sending FRC command: ${error}`);
-                updateCommandStatus(`Error sending FRC: ${error.message}`, true);
-            } finally {
-                 frcButton.disabled = false; // Re-enable button
-            }
+            bleDevice.gatt.disconnect();
+            // onDisconnected callback will handle the full UI reset
         }
 
-        async function sendResetCommand() {
-            if (!resetCommandCharacteristic || !bleDevice || !bleDevice.gatt.connected) {
-                 updateCommandStatus("Cannot send Reset: Not connected or characteristic unavailable", true); return;
-            }
-
-            try {
-                 updateCommandStatus("Sending Reset command...", false, true);
-                 resetButton.disabled = true;
-                 await resetCommandCharacteristic.writeValueWithoutResponse(encoder.encode("1")); // Send "1" as string
-                 log("Sent Reset command (1)");
-                 // Expect disconnection shortly after this
-            } catch (error) {
-                 logError(`Error sending Reset command: ${error}`);
-                 updateCommandStatus(`Error sending Reset: ${error.message}`, true);
-                 resetButton.disabled = false; // Re-enable on error
-            }
-            // Don't re-enable button on success, as device should disconnect
-        }
-
-
-        // --- Data Handlers (Notifications) ---
-        function handleCO2Changed(event) {
-            const value = decoder.decode(event.target.value);
-            co2ValueDisplay.textContent = value;
-        }
-        function handleTempChanged(event) {
-            const value = decoder.decode(event.target.value);
-            tempValueDisplay.textContent = value;
-        }
-        function handleHumidityChanged(event) {
-            const value = decoder.decode(event.target.value);
-            humidityValueDisplay.textContent = value;
-        }
-         function handleUptimeChanged(event) {
-            const value = decoder.decode(event.target.value);
-            uptimeValueDisplay.textContent = value;
-        }
-        function handleStatsChanged(event) {
-            const jsonString = decoder.decode(event.target.value);
-            log("Received Stats JSON: " + jsonString);
-            try {
-                const stats = JSON.parse(jsonString);
-                readingCountValueDisplay.textContent = stats.count ?? '---';
-                co2MinValueDisplay.textContent = stats.co2_min ?? '---';
-                co2MaxValueDisplay.textContent = stats.co2_max ?? '---';
-                co2AvgValueDisplay.textContent = stats.co2_avg ?? '---';
-                tempMinValueDisplay.textContent = stats.temp_min ?? '---';
-                tempMaxValueDisplay.textContent = stats.temp_max ?? '---';
-                tempAvgValueDisplay.textContent = stats.temp_avg ?? '---';
-                humMinValueDisplay.textContent = stats.hum_min ?? '---';
-                humMaxValueDisplay.textContent = stats.hum_max ?? '---';
-                humAvgValueDisplay.textContent = stats.hum_avg ?? '---';
-            } catch (error) {
-                logError("Error parsing stats JSON: " + error);
-                // Optionally display JSON parsing error in UI
-            }
-        }
-        function handleCommandStatusChanged(event) { // Optional
-             const value = decoder.decode(event.target.value);
-             log("Received Command Status: " + value);
-             // Determine if it's success or error based on content (simple check)
-             const isError = value.toLowerCase().includes("fail") || value.toLowerCase().includes("error");
-             updateCommandStatus(value, isError);
-        }
-
-        // --- UI & Logging ---
         function resetUI() {
-            connectButton.textContent = 'Connect Bluetooth';
-            co2ValueDisplay.textContent = '---';
-            tempValueDisplay.textContent = '---';
-            humidityValueDisplay.textContent = '---';
-            uptimeValueDisplay.textContent = '---';
-            // Reset stats table
-            readingCountValueDisplay.textContent = '---';
-            co2MinValueDisplay.textContent = '---'; co2MaxValueDisplay.textContent = '---'; co2AvgValueDisplay.textContent = '---';
-            tempMinValueDisplay.textContent = '---'; tempMaxValueDisplay.textContent = '---'; tempAvgValueDisplay.textContent = '---';
-            humMinValueDisplay.textContent = '---'; humMaxValueDisplay.textContent = '---'; humAvgValueDisplay.textContent = '---';
+             connectButton.disabled = false;
+             disconnectButton.disabled = true;
+             ascSwitch.disabled = true;
+             frcValueInput.disabled = true;
+             frcButton.disabled = true;
+             resetStatsButton.disabled = true; // Disable new buttons
+             restartDeviceButton.disabled = true; // Disable new buttons
 
-            updateCommandStatus("---"); // Reset command status
-            enableControls(false);      // Disable controls
-            isConnecting = false;
-            connectButton.disabled = false;
+             co2Display.textContent = '---';
+             tempDisplay.textContent = '---';
+             humidityDisplay.textContent = '---';
+             uptimeDisplay.textContent = '---';
+             ascStatusDisplay.textContent = 'Unknown';
+             ascStatusDisplay.style.color = '#6c757d'; // Reset color
+             ascSwitch.checked = false;
+             statsCO2Display.textContent = '--- / --- / ---';
+             statsTempDisplay.textContent = '--- / --- / ---';
+             statsHumDisplay.textContent = '--- / --- / ---';
+
+             clearChartData();
+             updateAllCharts(); // Update charts to show cleared state
+
+             // Destroy charts if they exist to prevent issues on reconnect
+             if (co2Chart) { co2Chart.destroy(); co2Chart = null; }
+             if (tempChart) { tempChart.destroy(); tempChart = null; }
+             if (humidityChart) { humidityChart.destroy(); humidityChart = null; }
+
+
+             bleDevice = null;
+             bleServer = null;
+             bleService = null;
+             sensorDataCharacteristic = null;
+             ascStatusCharacteristic = null;
+             frcCommandCharacteristic = null;
+             statsCharacteristic = null;
+             deviceCommandCharacteristic = null; // Clear new char object
         }
 
-        function enableControls(enable) {
-            frcButton.disabled = !enable;
-            resetButton.disabled = !enable;
+        async function readSensorData() {
+            if (!sensorDataCharacteristic) return; // Already handled connect fail
+            // clearError(); // Don't clear error on periodic reads
+            try {
+                const value = await sensorDataCharacteristic.readValue();
+                const decodedString = textDecoder.decode(value);
+                const parts = decodedString.split(',');
+                if (parts.length === 4) {
+                    const currentCO2 = parseFloat(parts[0]);
+                    const currentTemp = parseFloat(parts[1]);
+                    const currentHumidity = parseFloat(parts[2]);
+                    const currentUptime = parseInt(parts[3], 10);
+
+                    co2Display.textContent = currentCO2.toFixed(1);
+                    tempDisplay.textContent = currentTemp.toFixed(2);
+                    humidityDisplay.textContent = currentHumidity.toFixed(2);
+                    uptimeDisplay.textContent = formatUptime(currentUptime);
+
+                    updateChartData(currentCO2, currentTemp, currentHumidity);
+                } else {
+                    console.warn("Unexpected sensor data format: " + decodedString); // Log warning instead of error
+                }
+            } catch (error) {
+                console.error("Failed to read sensor data: " + (error.message || error));
+                // Consider triggering disconnect/resetUI if read fails repeatedly
+                if (error.name === 'NetworkError' || error.message.includes("GATT operation already in progress")) { // Typical errors on disconnect or issues
+                   if (bleDevice && bleDevice.gatt.connected) {
+                       console.log("Read failed but still connected, attempting disconnect...");
+                       disconnectDevice(); // Attempt graceful disconnect
+                   } else {
+                       onDisconnected(); // Already disconnected
+                   }
+                }
+            }
         }
 
-        function log(message) { console.log('[BLE Log] ' + message); }
-        function logError(message) { console.error('[BLE Error] ' + message); }
-
-        function updateStatus(message, isError = false) {
-             statusDisplay.textContent = `Status: ${message}`;
-             statusDisplay.className = isError ? 'status-error' : '';
-             if(isError) logError(message);
-        }
-        function updateCommandStatus(message, isError = false, isPending = false) {
-             commandStatusDisplay.textContent = `Command Status: ${message}`;
-             if (isError) {
-                 commandStatusDisplay.className = 'status-error';
-             } else if (isPending) {
-                 commandStatusDisplay.className = ''; // Default style for pending
+        async function readAscStatus() {
+             if (!ascStatusCharacteristic) return;
+             clearError();
+             try {
+                const value = await ascStatusCharacteristic.readValue();
+                const status = textDecoder.decode(value);
+                if (status === '1') {
+                    ascSwitch.checked = true;
+                    ascStatusDisplay.textContent = "ON";
+                    ascStatusDisplay.style.color = "#28a745";
+                } else {
+                     ascSwitch.checked = false;
+                     ascStatusDisplay.textContent = "OFF";
+                      ascStatusDisplay.style.color = "#dc3545";
+                }
+             } catch(error) {
+                 displayError("Failed to read ASC status: " + (error.message || error));
+                 ascStatusDisplay.textContent = "Error";
+                 ascStatusDisplay.style.color = "#ffc107";
+                 if(error.name === 'NetworkError') onDisconnected();
              }
-              else {
-                 commandStatusDisplay.className = 'status-success'; // Success style
-             }
-             // Clear success/error style after a delay? (Optional)
         }
 
-        // --- Initial Check ---
-        if (!navigator.bluetooth) {
-             updateStatus("Web Bluetooth API is not available!", true);
-             connectButton.disabled = true;
-             enableControls(false);
-        } else {
-             log("Web Bluetooth API available.");
-             updateStatus("Ready to connect");
-             resetUI(); // Initialize UI state
+        async function toggleASC() {
+            if (!ascStatusCharacteristic) return;
+            clearError();
+            const newValue = ascSwitch.checked ? "1" : "0";
+            const statusText = ascSwitch.checked ? "ON" : "OFF";
+            const statusColor = ascSwitch.checked ? "#28a745" : "#dc3545";
+            statusDisplay.textContent = `Setting ASC to ${statusText}...`;
+            ascSwitch.disabled = true; // Disable during operation
+            try {
+                await ascStatusCharacteristic.writeValue(textEncoder.encode(newValue));
+                console.log(`ASC set to ${newValue}`);
+                ascStatusDisplay.textContent = statusText;
+                ascStatusDisplay.style.color = statusColor;
+                statusDisplay.textContent = `ASC set to ${statusText}`;
+            } catch (error) {
+                displayError(`Failed to set ASC status: ${error.message || error}`);
+                statusDisplay.textContent = `Failed to set ASC`;
+                if(error.name === 'NetworkError') { onDisconnected(); return; } // Don't try read if disconnected
+                await readAscStatus(); // Revert UI on error if still connected
+            } finally {
+                 if(bleDevice && bleDevice.gatt.connected) ascSwitch.disabled = false;
+            }
         }
+
+        async function sendFRC() {
+             if (!frcCommandCharacteristic) return;
+             clearError();
+            const value = parseInt(frcValueInput.value, 10);
+            if (isNaN(value) || value < 400 || value > 2000) {
+                return displayError("Invalid FRC value. Must be between 400 and 2000.");
+            }
+            statusDisplay.textContent = `Sending FRC command (${value} ppm)...`;
+            frcButton.disabled = true;
+            try {
+                await frcCommandCharacteristic.writeValue(textEncoder.encode(value.toString()));
+                console.log(`FRC command sent with value ${value}`);
+                statusDisplay.textContent = `FRC command (${value} ppm) sent. Sensor calibrating...`;
+            } catch (error) {
+                 displayError(`Failed to send FRC command: ${error.message || error}`);
+                 statusDisplay.textContent = `FRC command failed`;
+                 if(error.name === 'NetworkError') onDisconnected();
+            } finally {
+                 if(bleDevice && bleDevice.gatt.connected) frcButton.disabled = false;
+            }
+        }
+
+        async function readStatistics() {
+            if (!statsCharacteristic) return;
+            // clearError(); // Don't clear error on periodic reads
+            try {
+                const value = await statsCharacteristic.readValue();
+                const decodedString = textDecoder.decode(value);
+                const parts = decodedString.split(',');
+                if (parts.length === 9) {
+                    const fmt = (val, dec) => parseFloat(val).toFixed(dec);
+                    statsCO2Display.textContent = `${fmt(parts[0],1)} / ${fmt(parts[1],1)} / ${fmt(parts[2],1)}`;
+                    statsTempDisplay.textContent = `${fmt(parts[3],2)} / ${fmt(parts[4],2)} / ${fmt(parts[5],2)}`;
+                    statsHumDisplay.textContent = `${fmt(parts[6],2)} / ${fmt(parts[7],2)} / ${fmt(parts[8],2)}`;
+                } else {
+                     console.warn("Unexpected statistics data format: " + decodedString);
+                }
+            } catch (error) {
+                 console.error("Failed to read statistics: " + (error.message || error));
+                 if(error.name === 'NetworkError') onDisconnected();
+            }
+        }
+
+        function formatUptime(totalSeconds) {
+            if (isNaN(totalSeconds) || totalSeconds < 0) return "---";
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        // --- Chart Functions ---
+        function initializeCharts() {
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { // Settings for better tooltips
+                    intersect: false,
+                    mode: 'index',
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            // No explicit 'unit' - allow dynamic scaling
+                            displayFormats: { // Provide formats for different units Chart.js might choose
+                                millisecond: 'HH:mm:ss.SSS',
+                                second: 'HH:mm:ss',
+                                minute: 'HH:mm',
+                                hour: 'HH:mm',
+                                day: 'MMM d',
+                                week: 'MMM d',
+                                month: 'MMM yyyy',
+                                quarter: '[Q]Q yyyy',
+                                year: 'yyyy'
+                            },
+                            tooltipFormat: 'PP HH:mm:ss' // Detailed format for tooltips (requires date-fns)
+                        },
+                        title: {
+                            display: true,
+                            text: 'Time'
+                        }
+                        // No explicit min/max needed here - let it scale to data
+                    },
+                    y: {
+                        beginAtZero: false, // Let chart decide based on data, except maybe CO2/Humidity
+                        title: {
+                            display: true,
+                            // text: 'Value' // Set per chart
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false // Only one dataset per chart
+                    },
+                     tooltip: { // Customize tooltips slightly
+                         bodySpacing: 4,
+                         padding: 8,
+                    }
+                },
+                 elements: {
+                    line: {
+                        tension: 0.1 // Smooth curves slightly
+                    },
+                    point: {
+                         radius: 2 // Smaller points
+                    }
+                },
+                 animation: {
+                     duration: 0 // Disable animation for real-time feel
+                 },
+            };
+
+            // Destroy existing charts if they exist (important for re-connects)
+            if (co2Chart) { co2Chart.destroy(); co2Chart = null; }
+            if (tempChart) { tempChart.destroy(); tempChart = null; }
+            if (humidityChart) { humidityChart.destroy(); humidityChart = null; }
+
+
+            if (co2ChartCtx) {
+                co2Chart = new Chart(co2ChartCtx, {
+                    type: 'line',
+                    data: {
+                        labels: chartLabels, // Use the shared labels array
+                        datasets: [{
+                            label: 'CO₂',
+                            data: co2Data, // Use the specific data array
+                            borderColor: 'rgb(255, 99, 132)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.1)', // Lighter fill
+                            fill: true, // Fill area below line
+                        }]
+                    },
+                    options: { ...commonOptions,
+                        scales: { ...commonOptions.scales,
+                            y: { ...commonOptions.scales.y, title: { display: true, text: 'CO₂ (ppm)'}, beginAtZero: true } // Force CO2 y-axis from 0
+                        }
+                    }
+                });
+            }
+             if (tempChartCtx) {
+                tempChart = new Chart(tempChartCtx, {
+                    type: 'line',
+                    data: { labels: chartLabels, datasets: [{ label: 'Temperature', data: tempData, borderColor: 'rgb(54, 162, 235)', backgroundColor: 'rgba(54, 162, 235, 0.1)', fill: true }] },
+                    options: { ...commonOptions, scales: { ...commonOptions.scales, y: { ...commonOptions.scales.y, title: { display: true, text: 'Temperature (°C)'} } } }
+                });
+            }
+             if (humidityChartCtx) {
+                humidityChart = new Chart(humidityChartCtx, {
+                    type: 'line',
+                    data: { labels: chartLabels, datasets: [{ label: 'Humidity', data: humidityData, borderColor: 'rgb(75, 192, 192)', backgroundColor: 'rgba(75, 192, 192, 0.1)', fill: true }] },
+                    options: { ...commonOptions, scales: { ...commonOptions.scales, y: { ...commonOptions.scales.y, title: { display: true, text: 'Humidity (%)'}, min: 0, max: 100 } } } // Humidity range 0-100
+                });
+            }
+        }
+
+        function updateChartData(newCO2, newTemp, newHumidity) {
+            const now = Date.now();
+            chartLabels.push(now);
+            co2Data.push(newCO2);
+            tempData.push(newTemp);
+            humidityData.push(newHumidity);
+            // Ensure data doesn't grow indefinitely
+            while (chartLabels.length > MAX_DATA_POINTS) {
+                chartLabels.shift();
+                co2Data.shift();
+                tempData.shift();
+                humidityData.shift();
+            }
+            updateAllCharts();
+        }
+
+        function clearChartData() {
+            chartLabels.length = 0;
+            co2Data.length = 0;
+            tempData.length = 0;
+            humidityData.length = 0;
+        }
+
+        function updateAllCharts() {
+            // Only update if chart instance exists
+            if(co2Chart) co2Chart.update();
+            if(tempChart) tempChart.update();
+            if(humidityChart) humidityChart.update();
+        }
+
+        // --- New Event Handlers ---
+        async function handleResetStats() {
+            if (!deviceCommandCharacteristic) return;
+            clearError();
+            statusDisplay.textContent = 'Sending Reset Statistics command...';
+            resetStatsButton.disabled = true;
+            try {
+                await deviceCommandCharacteristic.writeValue(textEncoder.encode("RESET_STATS"));
+                console.log('Reset Statistics command sent.');
+                statusDisplay.textContent = 'Statistics reset command sent.';
+                // Clear local stats display immediately (optimistic UI)
+                statsCO2Display.textContent = '0.0 / 0.0 / 0.0';
+                statsTempDisplay.textContent = '0.00 / 0.00 / 0.00';
+                statsHumDisplay.textContent = '0.00 / 0.00 / 0.00';
+                // Optionally wait and re-read to confirm from device
+                await new Promise(resolve => setTimeout(resolve, 300));
+                await readStatistics();
+            } catch (error) {
+                 displayError(`Failed to send Reset Statistics command: ${error.message || error}`);
+                 statusDisplay.textContent = `Reset Stats command failed`;
+                 if(error.name === 'NetworkError') onDisconnected();
+            } finally {
+                 if(bleDevice && bleDevice.gatt.connected) resetStatsButton.disabled = false;
+            }
+        }
+
+        async function handleRestartDevice() {
+            if (!deviceCommandCharacteristic) return;
+            clearError();
+            if (!confirm("Are you sure you want to restart the ESP32? This will disconnect the Web Bluetooth connection.")) return;
+
+            statusDisplay.textContent = 'Sending Restart Device command...';
+            // Disable all controls anticipating disconnect
+            restartDeviceButton.disabled = true;
+            resetStatsButton.disabled = true;
+            frcButton.disabled = true;
+            ascSwitch.disabled = true;
+            disconnectButton.disabled = true; // Also disable disconnect
+
+            try {
+                await deviceCommandCharacteristic.writeValue(textEncoder.encode("RESET_DEVICE"));
+                console.log('Restart Device command sent.');
+                statusDisplay.textContent = 'Restart command sent. Device will disconnect shortly...';
+                // onDisconnected will handle the UI reset
+            } catch (error) {
+                 displayError(`Failed to send Restart Device command: ${error.message || error}`);
+                 statusDisplay.textContent = `Restart Device command failed`;
+                 // Re-enable controls only if write failed AND still connected
+                 if(bleDevice && bleDevice.gatt.connected) {
+                     restartDeviceButton.disabled = false;
+                     resetStatsButton.disabled = false;
+                     frcButton.disabled = false;
+                     ascSwitch.disabled = false;
+                     disconnectButton.disabled = false;
+                 }
+                 // If error was disconnect, onDisconnected should handle it
+                 if(error.name === 'NetworkError') onDisconnected();
+            }
+        }
+
+        // Initialize UI state on page load
+        document.addEventListener('DOMContentLoaded', resetUI);
 
     </script>
-
 </body>
 </html>
