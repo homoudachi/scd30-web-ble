@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 Sensor Web BLE</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            padding: 20px;
+            line-height: 1.6;
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        h1 {
+            color: #0056b3;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        button {
+            display: block;
+            width: 100%;
+            padding: 12px 20px;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            margin-bottom: 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.2s ease;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-bottom: 20px;
+            font-weight: bold;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #e9ecef;
+            text-align: center;
+        }
+        .data-container {
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .data-item {
+            margin-bottom: 15px;
+            font-size: 1.1em;
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+         .data-item:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+         }
+        .label {
+            font-weight: bold;
+            color: #555;
+        }
+        .value {
+            color: #007bff;
+            font-weight: bold;
+        }
+        .unit {
+            color: #777;
+            margin-left: 5px;
+        }
+        .error {
+            color: #dc3545; /* Red for errors */
+            font-weight: bold;
+        }
+         /* Responsive adjustments */
+        @media (max-width: 600px) {
+            body {
+                padding: 15px;
+                margin: 10px;
+            }
+            h1 {
+                font-size: 1.5em;
+            }
+             button {
+                 padding: 10px 15px;
+                 font-size: 1em;
+             }
+            .data-item {
+                font-size: 1em;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ESP32 SCD30 Sensor</h1>
+
+    <button id="connectButton">Connect Bluetooth</button>
+    <div id="status">Status: Disconnected</div>
+
+    <div class="data-container">
+        <div class="data-item">
+            <span class="label">CO2:</span>
+            <span>
+                <span id="co2Value" class="value">---</span>
+                <span class="unit">ppm</span>
+            </span>
+        </div>
+        <div class="data-item">
+            <span class="label">Temperature:</span>
+             <span>
+                <span id="tempValue" class="value">---</span>
+                <span class="unit">°C</span>
+             </span>
+        </div>
+        <div class="data-item">
+            <span class="label">Humidity:</span>
+            <span>
+                <span id="humidityValue" class="value">---</span>
+                <span class="unit">%</span>
+            </span>
+        </div>
+    </div>
+
+
+    <script>
+        const connectButton = document.getElementById('connectButton');
+        const statusDisplay = document.getElementById('status');
+        const co2ValueDisplay = document.getElementById('co2Value');
+        const tempValueDisplay = document.getElementById('tempValue');
+        const humidityValueDisplay = document.getElementById('humidityValue');
+
+        // --- IMPORTANT: Make sure these UUIDs MATCH your ESP32 code ---
+        const SENSOR_SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+        const CO2_CHARACTERISTIC_UUID = "a1b5d7c1-0304-4c17-b7f4-3f3d5f5e9f0a";
+        const TEMP_CHARACTERISTIC_UUID = "b2c6e8d2-1415-5d28-c8a5-4a4e6a6f0b1b";
+        const HUMIDITY_CHARACTERISTIC_UUID = "c3d7f9e3-2526-6e39-d9b6-5b5f7b7a1c2c";
+
+        let bleDevice;
+        let bleServer;
+        let sensorService;
+        let co2Characteristic;
+        let tempCharacteristic;
+        let humidityCharacteristic;
+        let isConnecting = false; // Flag to prevent multiple connection attempts
+
+        connectButton.addEventListener('click', toggleConnection);
+
+        function toggleConnection() {
+            if (bleDevice && bleDevice.gatt.connected) {
+                disconnectDevice();
+            } else if (!isConnecting) { // Only attempt connect if not already trying
+                connectDevice();
+            }
+        }
+
+        async function connectDevice() {
+            if (!navigator.bluetooth) {
+                updateStatus("Web Bluetooth API is not available!", true);
+                return;
+            }
+            if (isConnecting) {
+                log("Already attempting to connect...");
+                return;
+            }
+
+            isConnecting = true; // Set connecting flag
+            connectButton.disabled = true; // Disable button during connection attempt
+            log('Requesting Bluetooth Device...');
+            updateStatus('Requesting device...');
+
+            try {
+                bleDevice = await navigator.bluetooth.requestDevice({
+                     filters: [{ services: [SENSOR_SERVICE_UUID] }],
+                    // Or use name prefix if filtering by service fails sometimes:
+                    // filters: [{ namePrefix: "ESP32" }],
+                    // optionalServices: [SENSOR_SERVICE_UUID] // Often needed
+                });
+
+                log(`Connecting to GATT Server on ${bleDevice.name}...`);
+                updateStatus('Connecting...');
+                bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+                bleServer = await bleDevice.gatt.connect();
+
+                log('Getting Service...');
+                updateStatus('Getting service...');
+                sensorService = await bleServer.getPrimaryService(SENSOR_SERVICE_UUID);
+
+                log('Getting Characteristics...');
+                updateStatus('Getting characteristics...');
+
+                // Get all characteristics
+                [co2Characteristic, tempCharacteristic, humidityCharacteristic] = await Promise.all([
+                    sensorService.getCharacteristic(CO2_CHARACTERISTIC_UUID),
+                    sensorService.getCharacteristic(TEMP_CHARACTERISTIC_UUID),
+                    sensorService.getCharacteristic(HUMIDITY_CHARACTERISTIC_UUID)
+                ]);
+
+                log('Setting up Notifications...');
+                updateStatus('Setting up notifications...');
+
+                // Add event listeners before starting notifications
+                co2Characteristic.addEventListener('characteristicvaluechanged', handleCO2Changed);
+                tempCharacteristic.addEventListener('characteristicvaluechanged', handleTempChanged);
+                humidityCharacteristic.addEventListener('characteristicvaluechanged', handleHumidityChanged);
+
+                // Start notifications
+                await co2Characteristic.startNotifications();
+                log('> CO2 Notifications started');
+                await tempCharacteristic.startNotifications();
+                log('> Temperature Notifications started');
+                await humidityCharacteristic.startNotifications();
+                log('> Humidity Notifications started');
+
+                log('Connected and listening!');
+                updateStatus('Connected', false); // false = not an error
+                connectButton.textContent = 'Disconnect';
+
+            } catch (error) {
+                logError(`Connection failed: ${error}`);
+                updateStatus(`Error: ${error.message}`, true);
+                // Ensure disconnect is attempted if connection partially succeeded
+                if (bleDevice && bleDevice.gatt.connected) {
+                    bleDevice.gatt.disconnect();
+                }
+                resetUI(); // Reset button text etc.
+            } finally {
+                isConnecting = false; // Reset connecting flag regardless of outcome
+                connectButton.disabled = false; // Re-enable button
+            }
+        }
+
+        function disconnectDevice() {
+            if (!bleDevice) {
+                log('No device connected.');
+                return;
+            }
+            log('Disconnecting from Bluetooth Device...');
+            if (bleDevice.gatt.connected) {
+                bleDevice.gatt.disconnect(); // This *should* trigger the 'onDisconnected' event
+            } else {
+                log('Device already disconnected.');
+                onDisconnected(); // Manually trigger if state is already disconnected
+            }
+        }
+
+        function onDisconnected() {
+            log('Bluetooth Device disconnected');
+            updateStatus('Disconnected');
+
+             // Clean up event listeners (important!)
+            if (co2Characteristic) {
+                 try { co2Characteristic.removeEventListener('characteristicvaluechanged', handleCO2Changed); } catch(e) { logError('Error removing CO2 listener: ' + e)}
+            }
+             if (tempCharacteristic) {
+                 try { tempCharacteristic.removeEventListener('characteristicvaluechanged', handleTempChanged); } catch(e) { logError('Error removing Temp listener: ' + e)}
+            }
+            if (humidityCharacteristic) {
+                 try { humidityCharacteristic.removeEventListener('characteristicvaluechanged', handleHumidityChanged); } catch(e) { logError('Error removing Humidity listener: ' + e)}
+            }
+
+            resetUI();
+
+            // Nullify objects
+            bleDevice = null;
+            bleServer = null;
+            sensorService = null;
+            co2Characteristic = null;
+            tempCharacteristic = null;
+            humidityCharacteristic = null;
+        }
+
+        // --- Data Handlers ---
+        const decoder = new TextDecoder('utf-8'); // Reuse decoder
+
+        function handleCO2Changed(event) {
+            const value = event.target.value; // This is a DataView
+            const decodedValue = decoder.decode(value);
+            log(`CO2 Notification: ${decodedValue}`);
+            co2ValueDisplay.textContent = decodedValue;
+        }
+
+        function handleTempChanged(event) {
+            const value = event.target.value;
+            const decodedValue = decoder.decode(value);
+            log(`Temperature Notification: ${decodedValue}`);
+            tempValueDisplay.textContent = decodedValue;
+        }
+
+        function handleHumidityChanged(event) {
+            const value = event.target.value;
+            const decodedValue = decoder.decode(value);
+            log(`Humidity Notification: ${decodedValue}`);
+            humidityValueDisplay.textContent = decodedValue;
+        }
+
+        // --- UI & Logging ---
+        function resetUI() {
+            connectButton.textContent = 'Connect Bluetooth';
+            co2ValueDisplay.textContent = '---';
+            tempValueDisplay.textContent = '---';
+            humidityValueDisplay.textContent = '---';
+            isConnecting = false; // Ensure flag is reset
+            connectButton.disabled = false; // Ensure button is enabled
+        }
+
+        function log(message) {
+            console.log('[BLE Log] ' + message);
+        }
+
+        function logError(message) {
+            console.error('[BLE Error] ' + message);
+        }
+
+        function updateStatus(message, isError = false) {
+             statusDisplay.textContent = `Status: ${message}`;
+             statusDisplay.className = isError ? 'error' : ''; // Add error class for styling
+             if(isError) { logError(message); } // Log errors to console too
+        }
+
+        // --- Initial Check ---
+        if (!navigator.bluetooth) {
+             updateStatus("Web Bluetooth API is not available in this browser!", true);
+             connectButton.disabled = true;
+        } else {
+             log("Web Bluetooth API available.");
+             updateStatus("Ready to connect"); // Initial status
+        }
+
+    </script>
+
+</body>
+</html>
