@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Minimal BLE Connection Test</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { color: #007bff; }
+        button {
+            background-color: #007bff; color: white; padding: 10px 15px; margin: 10px 0;
+            border: none; border-radius: 5px; cursor: pointer; font-size: 16px;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        .status-display { margin-top: 20px; padding: 15px; background-color: #e9ecef; border-radius: 5px; font-size: 18px; }
+        .log-area {
+            margin-top: 20px; padding: 10px; border: 1px solid #ccc;
+            height: 200px; overflow-y: scroll; background-color: #f8f9fa;
+            font-family: 'Courier New', Courier, monospace; font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Minimal BLE Connection Test</h1>
+        <button id="connectButton">Connect to MinimalTestDevice</button>
+        <button id="disconnectButton" disabled>Disconnect</button>
+
+        <div class="status-display">
+            Status: <span id="statusValue">Not Connected</span>
+        </div>
+
+        <h2>Log:</h2>
+        <div id="logArea" class="log-area"></div>
+    </div>
+
+    <script>
+        let device;
+        let server;
+
+        const connectButton = document.getElementById('connectButton');
+        const disconnectButton = document.getElementById('disconnectButton');
+        const statusValueSpan = document.getElementById('statusValue');
+        const logArea = document.getElementById('logArea');
+
+        function log(message) {
+            console.log(message);
+            const time = new Date().toLocaleTimeString();
+            logArea.innerHTML += `[${time}] ${message}<br>`;
+            logArea.scrollTop = logArea.scrollHeight; // Auto-scroll
+        }
+
+        connectButton.addEventListener('click', async () => {
+            if (!navigator.bluetooth) {
+                log('Web Bluetooth API is not available in this browser.');
+                alert('Web Bluetooth API is not available in this browser. Please use a compatible browser like Chrome or Edge.');
+                return;
+            }
+            await connectToDevice();
+        });
+
+        disconnectButton.addEventListener('click', async () => {
+            await disconnectDevice();
+        });
+
+        async function connectToDevice() {
+            try {
+                log('Requesting Bluetooth Device...');
+                connectButton.disabled = true;
+                statusValueSpan.textContent = "Requesting...";
+
+                // We'll filter by name for this minimal test, or use acceptAllDevices
+                // Option 1: Filter by name (if the Arduino sketch is advertising as "MinimalTestDevice")
+                device = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'MinimalTestDevice' }],
+                    // optionalServices: [] // No specific services needed for this basic connection test
+                });
+
+                // Option 2: Accept all devices (if filtering by name doesn't work or you want to be more general)
+                // device = await navigator.bluetooth.requestDevice({
+                //     acceptAllDevices: true
+                // });
+
+                log(`Device selected: ${device.name || 'Unnamed Device'} (ID: ${device.id})`);
+                statusValueSpan.textContent = `Selected: ${device.name || 'Unnamed Device'}`;
+
+                device.addEventListener('gattserverdisconnected', onDisconnected);
+
+                log('Connecting to GATT Server...');
+                statusValueSpan.textContent = "Connecting...";
+                server = await device.gatt.connect();
+                log('Connected to GATT Server.');
+                statusValueSpan.textContent = "Connected!";
+                disconnectButton.disabled = false;
+
+                // For this minimal test, we don't need to get services or characteristics.
+                // We just want to see if the connection holds.
+
+            } catch (error) {
+                log('Error during connect: ' + error);
+                statusValueSpan.textContent = "Error: " + error.message.split('.')[0]; // Show short error
+                connectButton.disabled = false;
+                disconnectButton.disabled = true;
+                if (device && device.gatt && device.gatt.connected) {
+                    device.gatt.disconnect();
+                }
+            }
+        }
+
+        async function disconnectDevice() {
+            log('Disconnecting from device...');
+            if (device && device.gatt && device.gatt.connected) {
+                await device.gatt.disconnect(); // This should trigger onDisconnected
+            } else {
+                log('Device not connected or already disconnected.');
+                onDisconnected(); // Manually call to reset UI
+            }
+        }
+
+        function onDisconnected() {
+            log('Device disconnected.');
+            statusValueSpan.textContent = "Disconnected";
+            connectButton.disabled = false;
+            disconnectButton.disabled = true;
+            device = null;
+            server = null;
+        }
+
+    </script>
+</body>
+</html>
